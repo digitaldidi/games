@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Circle Packing</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: sans-serif;
+      background-color: #f7f7f7;
+    }
+    #gameContainer {
+      position: relative;
+      margin: 20px auto;
+      width: 800px;
+      text-align: center;
+    }
+    #gameCanvas {
+      background-color: #fff;
+      border: 2px solid #999;
+    }
+    #scorePanel {
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+      margin-top: 10px;
+      font-size: 1.2em;
+    }
+    .scoreBox {
+      padding: 5px 10px;
+      background: #eee;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+    }
+    h1 {
+      text-align: center;
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Circle Packing (Bounding Radius = Score)</h1>
+  <div id="gameContainer">
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <div id="scorePanel">
+      <div id="currentScore" class="scoreBox">Current Score: 0</div>
+      <div id="bestScore" class="scoreBox">Best Score: --</div>
+    </div>
+  </div>
+  
+  <script>
+    /********************************************************
+     * Circle class
+     ********************************************************/
+    class Circle {
+      constructor(x, y, radius, color = '#3498db') {
+        this.x = x;
+        this.y = y;
+        this.radius = radius;
+        this.color = color;
+        this.isHighlighted = false; // highlight if colliding
+      }
+
+      draw(ctx) {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, 2 * Math.PI);
+        ctx.fillStyle = this.isHighlighted ? '#e74c3c' : this.color;
+        ctx.fill();
+        ctx.strokeStyle = '#333';
+        ctx.stroke();
+      }
+    }
+
+    /********************************************************
+     * Canvas setup and main variables
+     ********************************************************/
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    const currentScoreEl = document.getElementById('currentScore');
+    const bestScoreEl = document.getElementById('bestScore');
+
+    let circles = [];
+    let draggingCircle = null;
+    let offsetX = 0;
+    let offsetY = 0;
+
+    // We track the *lowest* valid radius as the "best score"
+    let bestScore = Infinity; 
+
+    /********************************************************
+     * Initialize the game
+     ********************************************************/
+    function init() {
+      const numCircles = 10;  // number of circles
+
+      // Create circles at random positions with random radii
+      // e.g., radius between 15 and 40
+      for (let i = 0; i < numCircles; i++) {
+        const radius = 15 + Math.random() * 25;
+        const x = Math.random() * (canvas.width - 2 * radius) + radius;
+        const y = Math.random() * (canvas.height - 2 * radius) + radius;
+        circles.push(new Circle(x, y, radius));
+      }
+
+      // Mouse event listeners for dragging
+      canvas.addEventListener('mousedown', onMouseDown);
+      canvas.addEventListener('mousemove', onMouseMove);
+      canvas.addEventListener('mouseup', onMouseUp);
+
+      // Start the animation loop
+      requestAnimationFrame(gameLoop);
+    }
+
+    /********************************************************
+     * Mouse event handlers
+     ********************************************************/
+    function onMouseDown(e) {
+      const mousePos = getMousePos(canvas, e);
+      // Go from top to bottom to find the "topmost" circle
+      for (let i = circles.length - 1; i >= 0; i--) {
+        const c = circles[i];
+        if (isPointInCircle(mousePos.x, mousePos.y, c)) {
+          draggingCircle = c;
+          offsetX = mousePos.x - c.x;
+          offsetY = mousePos.y - c.y;
+
+          // Bring this circle to the top of the drawing order
+          circles.splice(i, 1);
+          circles.push(c);
+          break;
+        }
+      }
+    }
+
+    function onMouseMove(e) {
+      if (draggingCircle) {
+        const mousePos = getMousePos(canvas, e);
+        draggingCircle.x = mousePos.x - offsetX;
+        draggingCircle.y = mousePos.y - offsetY;
+      }
+    }
+
+    function onMouseUp() {
+      draggingCircle = null;
+    }
+
+    /********************************************************
+     * Utility functions
+     ********************************************************/
+    function getMousePos(canvas, evt) {
+      const rect = canvas.getBoundingClientRect();
+      return {
+        x: evt.clientX - rect.left,
+        y: evt.clientY - rect.top
+      };
+    }
+
+    function isPointInCircle(px, py, circle) {
+      const dx = px - circle.x;
+      const dy = py - circle.y;
+      return (dx * dx + dy * dy) <= (circle.radius * circle.radius);
+    }
+
+    /********************************************************
+     * Collision detection
+     ********************************************************/
+    function checkCollisions() {
+      // Reset highlight state
+      circles.forEach(c => c.isHighlighted = false);
+
+      for (let i = 0; i < circles.length; i++) {
+        for (let j = i + 1; j < circles.length; j++) {
+          const c1 = circles[i];
+          const c2 = circles[j];
+          const dx = c1.x - c2.x;
+          const dy = c1.y - c2.y;
+          const distSq = dx * dx + dy * dy;
+          const rSum = c1.radius + c2.radius;
+          
+          if (distSq <= rSum * rSum) {
+            c1.isHighlighted = true;
+            c2.isHighlighted = true;
+          }
+        }
+      }
+    }
+
+    // Returns true if any circles are overlapping or touching
+    function isAnyCollision() {
+      for (let i = 0; i < circles.length; i++) {
+        for (let j = i + 1; j < circles.length; j++) {
+          const c1 = circles[i];
+          const c2 = circles[j];
+          const dx = c1.x - c2.x;
+          const dy = c1.y - c2.y;
+          const distSq = dx * dx + dy * dy;
+          const rSum = c1.radius + c2.radius;
+          
+          if (distSq <= rSum * rSum) {
+            return true; // collision or touching
+          }
+        }
+      }
+      return false;
+    }
+
+    /********************************************************
+     * Bounding circle & scoring
+     * - If there's any collision, the score is "Invalid."
+     * - Otherwise, the score is simply the bounding circle's
+     *   radius (the smaller the better).
+     ********************************************************/
+    function getBoundingCircle() {
+      let minX = Infinity, maxX = -Infinity;
+      let minY = Infinity, maxY = -Infinity;
+
+      circles.forEach(c => {
+        const left   = c.x - c.radius;
+        const right  = c.x + c.radius;
+        const top    = c.y - c.radius;
+        const bottom = c.y + c.radius;
+
+        if (left < minX)   minX = left;
+        if (right > maxX)  maxX = right;
+        if (top < minY)    minY = top;
+        if (bottom > maxY) maxY = bottom;
+      });
+
+      // Center of bounding box
+      const centerX = (minX + maxX) / 2;
+      const centerY = (minY + maxY) / 2;
+
+      // Radius is half the diagonal
+      const halfWidth  = (maxX - minX) / 2;
+      const halfHeight = (maxY - minY) / 2;
+      const radius = Math.sqrt(halfWidth * halfWidth + halfHeight * halfHeight);
+
+      return { x: centerX, y: centerY, radius };
+    }
+
+    function calculateScore() {
+      if (isAnyCollision()) {
+        // Overlapping or touching => invalid
+        return "Invalid";
+      }
+      // Otherwise, return the bounding circle radius
+      const { radius } = getBoundingCircle();
+      return radius; 
+    }
+
+    /********************************************************
+     * Main game loop
+     ********************************************************/
+    function gameLoop() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Highlight collisions in red
+      checkCollisions();
+
+      // Draw circles
+      circles.forEach(circle => circle.draw(ctx));
+
+      // Calculate current "score" (the bounding circle radius or "Invalid")
+      const score = calculateScore();
+
+      if (score === "Invalid") {
+        currentScoreEl.textContent = "Current Score: Invalid";
+      } else {
+        // Round or display as you like (here we do 1 decimal)
+        const roundedScore = Math.round(score * 10) / 10;
+        currentScoreEl.textContent = `Current Score: ${roundedScore}`;
+        
+        // If valid, we check if it's our best (lowest) so far
+        if (score < bestScore) {
+          bestScore = score;
+          const roundedBest = Math.round(bestScore * 10) / 10;
+          bestScoreEl.textContent = `Best Score: ${roundedBest}`;
+          console.log("New best (lowest) radius!", roundedBest);
+        }
+      }
+
+      requestAnimationFrame(gameLoop);
+    }
+
+    // Initialize on page load
+    window.onload = init;
+  </script>
+</body>
+</html>

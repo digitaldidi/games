@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Earthquake Building Game Prototype</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #fafafa;
+      font-family: sans-serif;
+    }
+    #gameContainer {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      background: #e4e4e4;
+    }
+    #gameCanvas {
+      background: #bfefff; /* Light sky color */
+    }
+    #uiPanel {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(255,255,255,0.8);
+      padding: 10px;
+      border-radius: 8px;
+    }
+    .shape-button {
+      display: inline-block;
+      margin: 5px;
+      padding: 5px 10px;
+      background-color: #008cba;
+      color: #fff;
+      border-radius: 4px;
+      cursor: pointer;
+      user-select: none;
+    }
+    #shakeButton {
+      margin-top: 10px;
+      padding: 8px 15px;
+      background-color: #e74c3c;
+      border-radius: 4px;
+      color: #fff;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div id="gameContainer">
+    <canvas id="gameCanvas"></canvas>
+    <div id="uiPanel">
+      <div>Select Shape:</div>
+      <div class="shape-button" data-shape="rectangle">Rectangle</div>
+      <div class="shape-button" data-shape="triangle">Triangle</div>
+      <div class="shape-button" data-shape="circle">Circle</div>
+      <br />
+      <div id="shakeButton">Shake!</div>
+    </div>
+  </div>
+
+  <!-- Matter.js library from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/matter-js@0.19.0/build/matter.min.js"></script>
+
+  <script>
+    /**********************************************************
+     * Basic Matter.js Setup
+     **********************************************************/
+    const Engine = Matter.Engine;
+    const Render = Matter.Render;
+    const Runner = Matter.Runner;
+    const Bodies = Matter.Bodies;
+    const World = Matter.World;
+    const Mouse = Matter.Mouse;
+    const MouseConstraint = Matter.MouseConstraint;
+    const Composite = Matter.Composite;
+    const Body = Matter.Body;
+    const Events = Matter.Events;
+
+    // Create the engine
+    const engine = Engine.create();
+    const world = engine.world;
+    world.gravity.y = 1; // normal gravity
+
+    // Get canvas and set up size
+    const canvas = document.getElementById("gameCanvas");
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    canvas.width = width;
+    canvas.height = height;
+
+    // Create the renderer
+    const render = Render.create({
+      canvas: canvas,
+      engine: engine,
+      options: {
+        width: width,
+        height: height,
+        wireframes: false, // Show solid shapes
+        background: '#bfefff'
+      }
+    });
+
+    Render.run(render);
+
+    // Create runner
+    const runner = Runner.create();
+    Runner.run(runner, engine);
+
+    /**********************************************************
+     * Ground & Boundaries
+     **********************************************************/
+    const ground = Bodies.rectangle(width / 2, height - 20, width, 40, {
+      isStatic: true,
+      render: { fillStyle: "#91c483" }
+    });
+
+    // Optionally, left/right walls to keep shapes within screen
+    const leftWall = Bodies.rectangle(0, height / 2, 40, height, {
+      isStatic: true,
+      render: { fillStyle: "#cccccc" }
+    });
+    const rightWall = Bodies.rectangle(width, height / 2, 40, height, {
+      isStatic: true,
+      render: { fillStyle: "#cccccc" }
+    });
+
+    World.add(world, [ground, leftWall, rightWall]);
+
+    /**********************************************************
+     * Mouse Control (Drag & Drop)
+     **********************************************************/
+    const mouse = Mouse.create(render.canvas);
+    const mouseConstraint = MouseConstraint.create(engine, {
+      mouse: mouse,
+      constraint: {
+        stiffness: 0.2,
+        render: {
+          visible: false
+        }
+      }
+    });
+    World.add(world, mouseConstraint);
+
+    // Keep the render mouse in sync with Matter.Mouse
+    render.mouse = mouse;
+
+    /**********************************************************
+     * Shape Creation Logic
+     **********************************************************/
+    let currentShapeType = "rectangle"; // default
+
+    // Shape buttons: Switch the currentShapeType
+    document.querySelectorAll(".shape-button").forEach(button => {
+      button.addEventListener("click", () => {
+        currentShapeType = button.getAttribute("data-shape");
+      });
+    });
+
+    // Listen for mouse clicks to place new shapes (when not dragging existing shapes).
+    // We'll do a naive approach: If user clicks the canvas, we spawn a shape at that location.
+    document.addEventListener("mousedown", (event) => {
+      // Ignore if user is dragging an existing shape:
+      if (mouseConstraint.body) {
+        return;
+      }
+      createShape(event.clientX, event.clientY, currentShapeType);
+    });
+
+    // Function to create shapes
+    function createShape(x, y, type) {
+      let body;
+      const color = getRandomColor();
+
+      switch (type) {
+        case "rectangle":
+          body = Bodies.rectangle(x, y, 60, 40, {
+            render: { fillStyle: color },
+            friction: 0.6,
+            restitution: 0.2
+          });
+          break;
+        case "triangle":
+          // approximate triangle with a polygon of 3 sides
+          const size = 50;
+          body = Bodies.polygon(x, y, 3, size, {
+            render: { fillStyle: color },
+            friction: 0.6,
+            restitution: 0.2
+          });
+          break;
+        case "circle":
+          body = Bodies.circle(x, y, 30, {
+            render: { fillStyle: color },
+            friction: 0.6,
+            restitution: 0.2
+          });
+          break;
+        default:
+          body = Bodies.rectangle(x, y, 60, 40, {
+            render: { fillStyle: color }
+          });
+          break;
+      }
+      World.add(world, body);
+    }
+
+    function getRandomColor() {
+      const colors = ["#f1c40f", "#e67e22", "#e74c3c", "#3498db", "#1abc9c", "#9b59b6"];
+      return colors[Math.floor(Math.random() * colors.length)];
+    }
+
+    /**********************************************************
+     * Earthquake / Shake Logic
+     **********************************************************/
+    const shakeButton = document.getElementById("shakeButton");
+    shakeButton.addEventListener("click", startEarthquake);
+
+    let isShaking = false;
+    let shakeDuration = 3000; // 3 seconds
+    let shakeMagnitude = 0.01; // random force scale
+
+    function startEarthquake() {
+      if (isShaking) return; // prevent re-trigger if already shaking
+
+      isShaking = true;
+      const startTime = Date.now();
+
+      // On each engine tick, apply random forces for the duration
+      Events.on(engine, "beforeUpdate", applyRandomForce);
+
+      function applyRandomForce() {
+        const elapsed = Date.now() - startTime;
+        if (elapsed < shakeDuration) {
+          // For each body, apply a small random force
+          Composite.allBodies(world).forEach((body) => {
+            if (!body.isStatic) {
+              const forceMagnitude = (Math.random() - 0.5) * shakeMagnitude;
+              Body.applyForce(body, body.position, {
+                x: forceMagnitude,
+                y: 0
+              });
+            }
+          });
+        } else {
+          // Stop shaking
+          Events.off(engine, "beforeUpdate", applyRandomForce);
+          isShaking = false;
+        }
+      }
+    }
+
+    /**********************************************************
+     * Resize Handling (optional)
+     **********************************************************/
+    window.addEventListener("resize", () => {
+      // You could handle canvas resize here, but note
+      // you'd need to reposition static walls, etc.
+      // For simplicity, we won't auto-resize in this demo.
+    });
+  </script>
+</body>
+</html>
